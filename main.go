@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,17 +29,30 @@ func main() {
 }
 
 func ReadFromUsb() {
-	fmt.Println("Waiting For USB PORT")
+
 	usbPort := os.Getenv("USB_PORT")
+	fmt.Println("Waiting For USB PORT : " + usbPort)
 	c := &serial.Config{Name: usbPort, Baud: 38400}
 	s, err := serial.OpenPort(c)
 	panicIfErr(err)
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, s)
-	panicIfErr(err)
-	content := string(buf.Bytes())
-	json := fmt.Sprintf(`{ "msg" : "%s"}`, content)
-	SendData(json)
+	for {
+		buffer := make([]byte, 256)
+		buf := bytes.NewBuffer(buffer)
+		count, err := io.CopyN(buf, s, 256)
+		panicIfErr(err)
+		panicIfErr(err)
+		content := string(buf.Bytes())
+		buf.Reset()
+		fmt.Printf("Read %d bytes\n", count)
+		fmt.Println("Received : " + content)
+		b, _ := json.Marshal(&Message{content})
+		SendData(string(b))
+		buf.Reset()
+	}
+}
+
+type Message struct {
+	Msg string
 }
 
 func panicIfErr(err error) {
@@ -47,10 +61,10 @@ func panicIfErr(err error) {
 	}
 }
 
-func SendData(json string) {
+func SendData(data string) {
 	url := os.Getenv("APP_URL")
 	waterFlowApi := fmt.Sprintf("%s/data", url)
-	req, _ := http.NewRequest("POST", waterFlowApi, bytes.NewBuffer([]byte(json)))
+	req, _ := http.NewRequest("POST", waterFlowApi, bytes.NewBuffer([]byte(data)))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	resp, err := client.Do(req)
